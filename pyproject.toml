@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0", "pytest-cov", "ruff", "mypy"]
+dev = ["pytest>=7.0", "pytest-cov", "pytest-timeout", "ruff", "mypy"]
 
 [tool.setuptools.packages.find]
 include = ["beta_swarm*"]
@@ -27,6 +27,17 @@ include = ["beta_swarm*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+
+[tool.mypy]
+python_version = "3.10"
+warn_unused_ignores = true
+warn_redundant_casts = true
+
+# scipy ships no py.typed marker, so every `from scipy import ...` is an error
+# about missing stubs rather than anything about this code.
+[[tool.mypy.overrides]]
+module = ["scipy.*"]
+ignore_missing_imports = true
 
 [tool.ruff]
 line-length = 100

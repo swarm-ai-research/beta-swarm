@@ -168,10 +168,15 @@ class SimulationResult:
 
     @property
     def overall_toxicity(self) -> float:
-        accepted = [i for i in self.interactions if i.accepted]
-        if not accepted:
+        # Only the blocked placeholder carries ground_truth=None, and it is
+        # never accepted (see _blocked_interaction). Binding in the guard keeps
+        # that invariant checked rather than assumed.
+        observed = [
+            gt for i in self.interactions if i.accepted and (gt := i.ground_truth) is not None
+        ]
+        if not observed:
             return 0.0
-        return float(np.mean([1.0 - i.ground_truth for i in accepted]))
+        return float(np.mean([1.0 - gt for gt in observed]))
 
 
 class Simulation:
@@ -241,6 +246,12 @@ class Simulation:
                         welfare -= cfg.audit_cost
                     if interaction.accepted:
                         v = interaction.ground_truth
+                        # Accepted implies an observed outcome: the only None
+                        # producer is _blocked_interaction, which hardcodes
+                        # accepted=False. Assert rather than assume, so a future
+                        # accepted-without-outcome path fails here and not as a
+                        # TypeError inside a mean() several frames away.
+                        assert v is not None, "accepted interaction without ground truth"
                         welfare += float(
                             self.engine.surplus_fn(np.asarray(v))
                             - self.engine.harm_fn(np.asarray(v))
@@ -398,8 +409,9 @@ class Simulation:
             mine = [i for i in interactions if i.metadata["archetype"] == archetype.value]
             if mine:
                 by_archetype[archetype.value] = sum(i.accepted for i in mine) / len(mine)
+        observed = [gt for i in accepted if (gt := i.ground_truth) is not None]
         realized_toxicity = (
-            float(np.mean([1.0 - i.ground_truth for i in accepted])) if accepted else 0.0
+            float(np.mean([1.0 - gt for gt in observed])) if observed else 0.0
         )
         return EpochReport(
             epoch=epoch,

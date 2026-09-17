@@ -189,13 +189,17 @@ class DistributionalMetrics:
 
         Lower is better. Returns ``None`` if no interaction has ground truth.
         """
-        with_truth = [i for i in interactions if i.ground_truth is not None]
+        # Bind the outcome in the guard so it is a plain float from here on:
+        # `ground_truth` is Optional, and a blocked placeholder carries None.
+        with_truth = [
+            (i.belief, gt) for i in interactions if (gt := i.ground_truth) is not None
+        ]
         if not with_truth:
             return None
         grid = np.linspace(0.0, 1.0, n_grid)
         total = 0.0
-        for i in with_truth:
-            cdf = i.belief.cdf(grid)
-            step = (grid >= i.ground_truth).astype(float)
+        for belief, truth in with_truth:
+            cdf = belief.cdf(grid)
+            step = (grid >= truth).astype(float)
             total += float(np.trapezoid((cdf - step) ** 2, grid))
         return total / len(with_truth)

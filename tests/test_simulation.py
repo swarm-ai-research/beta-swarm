@@ -183,3 +183,33 @@ def test_rejected_audits_charge_the_initiator():
     assert rejected_audits > 0  # the scenario actually exercises the fix
     delta = charged.payoffs[target] - free.payoffs[target]
     assert delta == pytest.approx(-0.5 * audits[target])
+
+
+# ----------------------------------------------------------------------
+# The ground_truth invariant
+# ----------------------------------------------------------------------
+def test_blocked_placeholder_is_never_accepted():
+    """The invariant the toxicity metrics rely on.
+
+    ``_blocked_interaction`` is the only producer of ``ground_truth=None``.
+    Every toxicity sum subtracts the outcome from 1.0, so an accepted
+    interaction without one would raise a TypeError several frames deep inside
+    a ``mean()``. The metrics narrow on ``ground_truth is not None`` and the
+    accepted branch asserts it, but this pins the source rather than the
+    symptom: if a blocked interaction ever becomes acceptable, fail here.
+    """
+    sim = Simulation(_population(), _tail_governor(), SimulationConfig(seed=0))
+    blocked = sim._blocked_interaction(sim.population[0])
+    assert blocked.ground_truth is None
+    assert blocked.accepted is False
+    assert blocked.metadata["blocked"] is True
+
+
+def test_toxicity_ignores_outcomeless_interactions():
+    """A None outcome must be excluded, not crash the mean."""
+    sim = Simulation(_population(), _tail_governor(), SimulationConfig(seed=0))
+    result = sim.run()
+    # Injecting a blocked placeholder must not change realized toxicity.
+    before = result.overall_toxicity
+    result.interactions.append(sim._blocked_interaction(sim.population[0]))
+    assert result.overall_toxicity == pytest.approx(before)

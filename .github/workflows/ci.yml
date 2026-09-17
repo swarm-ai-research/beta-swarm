@@ -1,0 +1,76 @@
+name: CI
+
+# This repo was split out of swarm-ai-research/swarm, where these tests used to
+# run on every push. Between the split and this workflow they ran nowhere.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: python -m pip install -e ".[dev]"
+      - name: ruff
+        run: ruff check .
+
+  types:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: python -m pip install -e ".[dev]"
+      # The whole package is clean; keep it that way rather than scoping this
+      # down the first time it goes red.
+      - name: mypy
+        run: python -m mypy beta_swarm/
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Floor from requires-python, plus the version this was developed on.
+        python-version: ["3.10", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - run: python -m pip install -e ".[dev]"
+      # ~2 minutes, most of it beta_swarm.inference: those tests run real HMC
+      # chains, including a Neal's funnel that must produce divergences and a
+      # bimodal target that must fail R-hat. They are slow because they are
+      # doing the thing they check. Do not mark them slow and skip them in CI —
+      # a sampler whose diagnostics are never exercised is the failure mode the
+      # package exists to avoid.
+      - name: pytest
+        run: python -m pytest tests/ -q --timeout=600
+        timeout-minutes: 15
+
+  # Single required status, so branch protection has one check to point at
+  # instead of tracking the matrix.
+  ci:
+    if: always()
+    needs: [lint, types, test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any job failed
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1
+      - run: echo "all checks passed"
