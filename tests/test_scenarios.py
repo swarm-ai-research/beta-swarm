@@ -2,14 +2,13 @@
 
 from pathlib import Path
 
-import numpy as np
 import pytest
 from pydantic import ValidationError
 
 from beta_swarm.agents import Archetype, make_population
 from beta_swarm.governance import TailMassGovernor
-from beta_swarm.levers import GovernanceStack, StakingLever, TailCircuitBreaker
-from beta_swarm.scenarios import ScenarioConfig, load_scenario, run_scenario
+from beta_swarm.levers import GovernanceStack
+from beta_swarm.scenarios import ScenarioConfig, run_scenario
 from beta_swarm.simulation import Simulation, SimulationConfig
 
 SCENARIOS = Path(__file__).resolve().parent.parent / "scenarios"
@@ -89,20 +88,6 @@ def test_redteam_archetypes_build():
     assert pop[2].flip_epoch == 5
 
 
-def test_containment_escaper_builds_with_phase_params():
-    cfg = ScenarioConfig.model_validate(
-        _cfg(population=[
-            {"archetype": "containment_escaper", "count": 2,
-             "probe_epochs": 3, "breakout_epoch": 9, "forge_volume": 15},
-        ])
-    )
-    pop = cfg.build_population()
-    assert [a.agent_id for a in pop] == ["escaper-0", "escaper-1"]
-    assert pop[0].probe_epochs == 3
-    assert pop[0].breakout_epoch == 9
-    assert pop[0].forge_volume == 15
-
-
 def test_colluders_share_a_ring():
     cfg = ScenarioConfig.model_validate(_cfg(population=[{"archetype": "colluder", "count": 3}]))
     pop = cfg.build_population()
@@ -165,15 +150,38 @@ def test_shipped_scenarios_run(name):
     assert result.epoch_reports
 
 
-def test_containment_escape_scenario_contains_the_breakout():
-    result = run_scenario(SCENARIOS / "containment_escape.yaml")
-    escaper = [i for i in result.interactions if i.initiator.startswith("escaper")]
-    assert escaper
-    assert sum(i.metadata.get("blocked", False) for i in escaper) / len(escaper) > 0.2
-
-
 def test_defended_scenario_blocks_forgers():
     result = run_scenario(SCENARIOS / "volume_forgery_defended.yaml")
     forger = [i for i in result.interactions if i.initiator.startswith("forger")]
     assert forger
     assert sum(i.metadata.get("blocked", False) for i in forger) / len(forger) > 0.5
+
+
+def test_unknown_payoff_key_is_rejected():
+    """The loader's 'typos fail loudly' promise must cover the payoff section."""
+    with pytest.raises(ValidationError):
+        ScenarioConfig.model_validate(_cfg(payoff={"s_pluss": 5.0}))
+
+
+# ----------------------------------------------------------------------
+# Containment escape (ported from the standalone repo)
+# ----------------------------------------------------------------------
+def test_containment_escaper_builds_with_phase_params():
+    cfg = ScenarioConfig.model_validate(
+        _cfg(population=[
+            {"archetype": "containment_escaper", "count": 2,
+             "probe_epochs": 3, "breakout_epoch": 9, "forge_volume": 15},
+        ])
+    )
+    pop = cfg.build_population()
+    assert [a.agent_id for a in pop] == ["escaper-0", "escaper-1"]
+    assert pop[0].probe_epochs == 3
+    assert pop[0].breakout_epoch == 9
+    assert pop[0].forge_volume == 15
+
+
+def test_containment_escape_scenario_contains_the_breakout():
+    result = run_scenario(SCENARIOS / "containment_escape.yaml")
+    escaper = [i for i in result.interactions if i.initiator.startswith("escaper")]
+    assert escaper
+    assert sum(i.metadata.get("blocked", False) for i in escaper) / len(escaper) > 0.2

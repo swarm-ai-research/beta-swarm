@@ -3,7 +3,7 @@
 **Distributional safety with a full belief over a continuous outcome.**
 
 A generalization of the soft-label formalism in
-[`distributional-agi-safety`](https://github.com/swarm-ai-safety/swarm). Where
+[`distributional-agi-safety`](https://github.com/swarm-ai-research/swarm). Where
 that framework carries a single scalar `p = P(v = +1)` per interaction, an agent
 here carries a parameterized **distribution** over a continuous quality
 `v ∈ [0, 1]`:
@@ -433,6 +433,54 @@ reproduces the equivalent hand-built simulation to the interaction (both are
 tested). Three scenarios ship in [`scenarios/`](scenarios): the governor
 showdown, the defended forgery attack, and the adaptive retune.
 
+## Fitting the proxy instead of hand-setting it
+
+`BetaProxyComputer` has seven constants. Because `v` is continuous, the proxy
+already *defines a likelihood* — the calibration harness above scores that
+predictive distribution (CRPS and PIT are proper scoring rules for exactly it)
+but never inverts it:
+
+```
+w      = softmax([z1, z2, z3, 0])   # weights on the simplex
+v_hat  = w . x                      # x in [-1,1]^4, from observables
+mean   = sigmoid(k * v_hat)
+conc   = c0 + s * e
+v     ~ Beta(mean * conc, (1 - mean) * conc)
+```
+
+`beta_swarm.inference` inverts it: a differentiable log-posterior with an
+analytic gradient, sampled by dynamic Hamiltonian Monte Carlo (dynamic
+trajectory lengths with a U-turn criterion, multinomial trajectory sampling,
+dual-averaging step size, windowed diagonal metric) — implemented from
+Betancourt, [*A Conceptual Introduction to Hamiltonian
+Monte Carlo*](https://arxiv.org/abs/1701.02434).
+
+```python
+from beta_swarm.inference import ProxyPosterior, design_from_observables, sample
+
+design = design_from_observables(observables, outcomes)
+post = ProxyPosterior(design)
+res = sample(post, init=post.init_point(), n_draws=1000, n_warmup=1000, n_chains=4)
+
+print(res.diagnostics.summary())      # divergences, R-hat, ESS, E-BFMI
+assert not res.diagnostics.warnings()  # always check before using the draws
+```
+
+Divergences, E-BFMI, split R-hat and ESS are required outputs rather than
+optional logs: a sampler that cannot report its own pathologies produces
+confident wrong answers instead of obvious ones. `scripts/hmc_vs_grid_evidence_scale.py`
+runs the posterior against the 1-D `evidence_scale` grid it replaces and writes a
+reproducible run folder.
+
+What it found on the archetype generator: `base_concentration` and
+`evidence_scale` are anti-correlated at r = -0.77, so a per-axis grid cannot
+reach the joint optimum by construction; and the posterior puts almost all
+observable weight on counterparty engagement against a hand-set 0.2 — which is a
+property of *this* generator's emission models (deceivers fake progress and
+cannot fake engagement), not an established fact about real systems. A third
+prediction failed: tail-mass credible intervals came out too narrow to change any
+governance call.
+
 ## Package layout
 
 | Module | Contents |
@@ -447,10 +495,11 @@ showdown, the defended forgery attack, and the adaptive retune.
 | `beta_swarm.simulation` | `Simulation` — governed epoch loop, belief reputation, audits, epoch metrics |
 | `beta_swarm.collusion` | `CollusionDetector` — ring detection from belief-shape asymmetry |
 | `beta_swarm.calibration` | PIT histograms, tail-mass reliability, CRPS, `evidence_scale` sweeps |
-| `beta_swarm.redteam` | `AttackLibrary` — volume forgery, reputation farming, collusion ring; `run_attack` evaluator |
+| `beta_swarm.redteam` | `AttackLibrary` — volume forgery, reputation farming, collusion ring, containment escape; `run_attack` evaluator |
 | `beta_swarm.levers` | `GovernanceStack` — staking, tail circuit breaker, risk tax; composable ex-post accountability |
 | `beta_swarm.adaptive` | `AdaptiveController` — tune the risk budget to a realized-risk target, crystallize/revert |
 | `beta_swarm.scenarios` | `load_scenario` / `run_scenario` — a whole governed experiment as one reproducible YAML file |
+| `beta_swarm.inference` | `ProxyPosterior` + dynamic HMC — fit the proxy's parameters instead of hand-setting them |
 
 ## Tests
 

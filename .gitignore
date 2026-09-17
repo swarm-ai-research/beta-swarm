@@ -11,3 +11,6 @@ dist/
 .venv/
 venv/
 .DS_Store
+
+# Experiment outputs from scripts/ (see scripts/hmc_vs_grid_evidence_scale.py)
+runs/

@@ -50,17 +50,16 @@ from beta_swarm.payoff import (
     PayoffConfig,
 )
 from beta_swarm.proxy import BetaProxyComputer, ProxyObservables
-from beta_swarm.scenarios import ScenarioConfig, load_scenario, run_scenario
 from beta_swarm.redteam import (
     AttackCategory,
     AttackLibrary,
     AttackResult,
     AttackScenario,
-    ContainmentEscaper,
     ReputationFarmer,
     VolumeForger,
     run_attack,
 )
+from beta_swarm.scenarios import ScenarioConfig, load_scenario, run_scenario
 from beta_swarm.simulation import (
     EpochReport,
     Simulation,
@@ -114,7 +113,6 @@ __all__ = [
     "AttackResult",
     "VolumeForger",
     "ReputationFarmer",
-    "ContainmentEscaper",
     "run_attack",
     "GovernanceStack",
     "GovernanceLever",

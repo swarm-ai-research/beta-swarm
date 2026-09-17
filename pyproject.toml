@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "beta-swarm"
-version = "0.1.0"
+version = "0.2.0"
 description = "Distributional safety: a Beta belief over a continuous outcome, generalizing scalar soft labels."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -31,3 +31,8 @@ addopts = "-q"
 [tool.ruff]
 line-length = 100
 target-version = "py310"
+
+[tool.ruff.lint.per-file-ignores]
+# Semicolons are idiomatic in notebook plotting cells (matches the
+# swarm monorepo's convention for the same file).
+"examples/*.ipynb" = ["E702", "B905"]

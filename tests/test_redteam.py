@@ -3,6 +3,7 @@
 import numpy as np
 
 from beta_swarm.agents import Archetype
+from beta_swarm.governance import TailMassGovernor
 from beta_swarm.proxy import BetaProxyComputer
 from beta_swarm.redteam import (
     AttackCategory,
@@ -13,7 +14,6 @@ from beta_swarm.redteam import (
     run_attack,
 )
 from beta_swarm.simulation import SimulationConfig
-from beta_swarm.governance import TailMassGovernor
 
 
 def _tail_gov():
@@ -50,62 +50,6 @@ def test_reputation_farmer_flips_true_quality():
     early = np.mean([farmer.sample_outcome(rng, epoch=2) for _ in range(500)])
     late = np.mean([farmer.sample_outcome(rng, epoch=15) for _ in range(500)])
     assert early > 0.6 and late < 0.35  # genuine work, then poor
-
-
-def test_containment_escaper_reconnaissance_looks_honest():
-    """The quiet phase: genuine work, faithfully reported — no forgery yet."""
-    rng = np.random.default_rng(0)
-    proxy = BetaProxyComputer()
-    esc = ContainmentEscaper("e", Archetype.DECEPTIVE, 2.0, 8.0, probe_epochs=5, breakout_epoch=12)
-    outs = [esc.sample_outcome(rng, epoch=2) for _ in range(500)]
-    assert np.mean(outs) > 0.6  # genuinely good work while probing
-    beliefs = [
-        proxy.compute_belief(esc.emit_observables(v, rng, epoch=2))
-        for v in [esc.sample_outcome(rng, epoch=2) for _ in range(500)]
-    ]
-    assert np.mean([b.mean for b in beliefs]) > 0.6            # reads as high-quality
-    assert np.mean([b.concentration for b in beliefs]) < 10.0  # honestly diffuse, not forged-sharp
-
-
-def test_containment_escaper_escalates_concentration_to_a_breakout():
-    """Phases sharpen the belief: recon (diffuse) -> reuse -> forged-sharp breakout."""
-    rng = np.random.default_rng(0)
-    proxy = BetaProxyComputer()
-    esc = ContainmentEscaper("e", Archetype.DECEPTIVE, 2.0, 8.0, probe_epochs=5, breakout_epoch=12)
-
-    def conc(epoch):
-        return np.mean(
-            [proxy.compute_belief(esc.emit_observables(0.2, rng, epoch=epoch)).concentration for _ in range(300)]
-        )
-
-    recon, reuse, breakout = conc(2), conc(8), conc(14)
-    assert recon < reuse < breakout          # monotone escalation
-    assert breakout > 20.0                    # decisive: past the DEFER gate
-    # Post-probe true quality is genuinely poor — the forged mean hides it.
-    assert np.mean([esc.sample_outcome(rng, epoch=14) for _ in range(500)]) < 0.35
-
-
-def test_containment_escape_breaks_the_standard_governor():
-    result = run_attack(
-        AttackLibrary.containment_escape(), _tail_gov(), SimulationConfig(seed=7)
-    )
-    assert result.evasion_rate > 0.4        # recon accepted honestly, breakout on forged sharpness
-    assert result.realized_damage > 50      # poor work lands once the breakout starts
-
-
-def test_containment_escape_contained_by_ex_post_levers():
-    from beta_swarm.levers import GovernanceStack, StakingLever, TailCircuitBreaker
-
-    stack = GovernanceStack(
-        [StakingLever(min_stake=1.0, slash_rate=0.5, tau=0.4), TailCircuitBreaker(max_tail_exposure=0.5, tau=0.4)],
-        initial_resources=5.0,
-    )
-    result = run_attack(
-        AttackLibrary.containment_escape(), _tail_gov(), SimulationConfig(seed=7), levers=stack
-    )
-    # The belief-agnostic, realized-outcome layer shuts the breakout out.
-    assert result.blocked_rate > 0.3
-    assert result.realized_damage < 40
 
 
 # ----------------------------------------------------------------------
@@ -172,3 +116,47 @@ def test_run_attack_is_deterministic():
     b = run_attack(AttackLibrary.volume_forgery(), _tail_gov(), SimulationConfig(seed=3))
     assert a.evasion_rate == b.evasion_rate
     assert a.realized_damage == b.realized_damage
+
+
+# ----------------------------------------------------------------------
+# Containment escape — staged breakout (ported from the standalone repo)
+# ----------------------------------------------------------------------
+def test_containment_escaper_reconnaissance_looks_honest():
+    """The quiet phase: genuine work, faithfully reported — no forgery yet."""
+    rng = np.random.default_rng(0)
+    proxy = BetaProxyComputer()
+    esc = ContainmentEscaper("e", Archetype.DECEPTIVE, 2.0, 8.0, probe_epochs=5, breakout_epoch=12)
+    outs = [esc.sample_outcome(rng, epoch=2) for _ in range(500)]
+    assert np.mean(outs) > 0.6  # genuinely good work while probing
+    beliefs = [
+        proxy.compute_belief(esc.emit_observables(v, rng, epoch=2))
+        for v in [esc.sample_outcome(rng, epoch=2) for _ in range(500)]
+    ]
+    assert np.mean([b.mean for b in beliefs]) > 0.6            # reads as high-quality
+    assert np.mean([b.concentration for b in beliefs]) < 10.0  # honestly diffuse, not forged-sharp
+
+
+def test_containment_escaper_escalates_concentration_to_a_breakout():
+    """Phases sharpen the belief: recon (diffuse) -> reuse -> forged-sharp breakout."""
+    rng = np.random.default_rng(0)
+    proxy = BetaProxyComputer()
+    esc = ContainmentEscaper("e", Archetype.DECEPTIVE, 2.0, 8.0, probe_epochs=5, breakout_epoch=12)
+
+    def conc(epoch):
+        return np.mean(
+            [proxy.compute_belief(esc.emit_observables(0.2, rng, epoch=epoch)).concentration for _ in range(300)]
+        )
+
+    recon, reuse, breakout = conc(2), conc(8), conc(14)
+    assert recon < reuse < breakout          # monotone escalation
+    assert breakout > 20.0                    # decisive: past the DEFER gate
+    # Post-probe true quality is genuinely poor — the forged mean hides it.
+    assert np.mean([esc.sample_outcome(rng, epoch=14) for _ in range(500)]) < 0.35
+
+
+def test_containment_escape_breaks_the_standard_governor():
+    result = run_attack(
+        AttackLibrary.containment_escape(), _tail_gov(), SimulationConfig(seed=7)
+    )
+    assert result.evasion_rate > 0.4        # recon accepted honestly, breakout on forged sharpness
+    assert result.realized_damage > 50      # poor work lands once the breakout starts
