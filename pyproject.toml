@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0", "pytest-cov", "pytest-timeout", "ruff", "mypy"]
+dev = ["pytest>=7.0", "pytest-cov", "pytest-timeout", "ruff>=0.5", "mypy", "types-PyYAML"]
 
 [tool.setuptools.packages.find]
 include = ["beta_swarm*"]
@@ -29,19 +29,38 @@ testpaths = ["tests"]
 addopts = "-q"
 
 [tool.mypy]
-python_version = "3.10"
+# Deliberately no `python_version` pin: numpy's bundled stubs use 3.12+ `type`
+# statements, and pinning to the requires-python floor makes mypy reject them
+# outright. The 3.10 floor is enforced by the pytest matrix instead.
 warn_unused_ignores = true
 warn_redundant_casts = true
 
 # scipy ships no py.typed marker, so every `from scipy import ...` is an error
 # about missing stubs rather than anything about this code.
 [[tool.mypy.overrides]]
-module = ["scipy.*"]
+module = ["scipy.*", "yaml"]
 ignore_missing_imports = true
 
 [tool.ruff]
 line-length = 100
 target-version = "py310"
+
+[tool.ruff.lint]
+# Pinned explicitly. Leaving this unset inherits the installed ruff's defaults,
+# which change between releases: the first CI run failed on 40 findings (UP/RUF
+# rules) that a slightly older local ruff never raised. Same set as the swarm
+# monorepo, so code moving between the two lints identically.
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # Pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+]
+ignore = [
+    "E501",  # line too long (handled by formatter)
+]
 
 [tool.ruff.lint.per-file-ignores]
 # Semicolons are idiomatic in notebook plotting cells (matches the
